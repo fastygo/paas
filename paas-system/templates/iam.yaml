@@ -1,0 +1,130 @@
+
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.iam.gatewayName }}
+spec:
+  gatewayClassName: {{ .Values.gateway.className }}
+  listeners:
+    - name: web
+      protocol: HTTP
+      port: {{ .Values.iam.publicPort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.iam.serviceName }}
+spec:
+  ports:
+    - name: http
+      port: {{ .Values.iam.internalPort }}
+      targetPort: {{ .Values.iam.internalPort }}
+  selector:
+    {{ .Values.iam.labels | toYaml }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Values.iam.routeName }}
+spec:
+  parentRefs:
+    - name: {{ .Values.iam.gatewayName }}
+  rules:
+    - backendRefs:
+        - group: ""
+          kind: Service
+          name: {{ .Values.iam.serviceName }}
+          port: {{ .Values.iam.internalPort }}
+          weight: 1
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Values.grafana.routeName }}
+spec:
+  parentRefs:
+    - name: {{ .Values.iam.gatewayName }}
+  rules:
+    - backendRefs:
+        - group: ""
+          kind: Service
+          name: "paas-service"
+          port: {{ .Values.grafana.internalPort }}
+          weight: 1
+      matches:
+        - path:
+            type: PathPrefix
+            value: /grafana
+---
+{{- if .Values.iam.address -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.iam.secretName }}
+type: Opaque
+stringData:
+  app.conf: |
+    appname = casdoor
+    httpport = {{ .Values.iam.internalPort }}
+    runmode = dev
+    SessionOn = true
+    copyrequestbody = true
+    driverName = postgres
+    dataSourceName = user={{ .Values.pgIam.username }} password={{ .Values.pgIam.password }} host={{ .Values.pgIam.clusterName }}-rw port=5432 sslmode=disable dbname={{ .Values.pgIam.databaseName }}
+    dbName = {{ .Values.pgIam.databaseName }}
+    tableNamePrefix = iam
+    showSql = false
+    redisEndpoint = ""
+    defaultStorageProvider = ""
+    isCloudIntranet = false
+    authState = "casdoor"
+    socks5Proxy = ""
+    verificationCodeTimeout = 10
+    initScore = 2000
+    logPostOnly = true
+    origin = "http://{{ .Values.iam.address }}:{{ .Values.iam.publicPort }}"
+    staticBaseUrl = "http://{{ .Values.iam.address }}:{{ .Values.iam.publicPort }}"
+    enableGzip = true
+    inactiveTimeoutMinutes = ""
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iam-casdoor
+  labels:
+    {{ .Values.iam.labels | toYaml }}
+spec:
+  #EDIT IT: if you don't use redis, casdoor should not have multiple replicas
+  replicas: 1
+  selector:
+    matchLabels:
+      {{ .Values.iam.labels | toYaml }}
+  template:
+    metadata:
+      labels:
+        {{ .Values.iam.labels | toYaml }}
+    spec:
+      containers:
+        - name: casdoor-container
+          image: casbin/casdoor:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: {{ .Values.iam.internalPort }}
+          volumeMounts:
+            # the mounted directory path in THE CONTAINER
+            - mountPath: /conf/
+              name: conf
+          env:
+            - name: RUNNING_IN_DOCKER
+              value: "true"
+      volumes:
+        - name: conf
+          secret:
+            secretName: {{ .Values.iam.secretName }}
+{{- end -}}

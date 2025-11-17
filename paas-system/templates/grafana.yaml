@@ -1,0 +1,129 @@
+{{- if .Values.iam.address -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.grafana.secretName }}
+type: kubernetes.io/basic-auth
+data:
+  username: {{ .Values.grafana.pg.username | b64enc }}
+  password: {{ .Values.grafana.pg.password | b64enc }}
+  admin_password: {{ .Values.grafana.adminPassword | b64enc }}
+  client_id: {{ .Values.grafana.clientID | b64enc  }}
+  client_secret: {{ .Values.grafana.clientSecret | b64enc }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.grafana.pg.clusterName }}
+spec:
+  instances: 1
+  bootstrap:
+    initdb:
+      database: {{ .Values.grafana.pg.databaseName }}
+      owner: {{ .Values.grafana.pg.username }}
+      secret:
+        name: {{ .Values.grafana.secretName }}
+  storage:
+    size: {{ .Values.grafana.pg.size }}
+    {{- if .Values.grafana.pg.persistent.enabled}}
+    storageClass: {{ .Values.grafana.pg.persistent.storageClassName }}
+    {{- end }}
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: paas
+  labels:
+    dashboards: "paas"
+spec:
+  deployment:
+    spec:
+      replicas: 1
+      template:
+        spec:
+          containers:
+            - name: grafana
+              env:
+                - name: GF_DATABASE_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.grafana.secretName }}
+                      key: username
+                - name: GF_DATABASE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.grafana.secretName }}
+                      key: password
+                - name: GF_SECURITY_ADMIN_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.grafana.secretName }}
+                      key: admin_password
+                - name: GF_AUTH_GENERIC_OAUTH_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.grafana.secretName }}
+                      key: client_id
+                - name: GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.grafana.secretName }}
+                      key: client_secret
+  config:
+    database:
+      type: postgres
+      host: {{ .Values.grafana.pg.clusterName }}-rw
+      name: {{ .Values.grafana.pg.databaseName }}
+    security:
+      admin_user: admin
+    server:
+      root_url: "http://{{ .Values.iam.address }}:{{ .Values.iam.publicPort }}/grafana"
+      serve_from_sub_path: "true"
+      http_port: "{{ .Values.grafana.internalPort }}"
+    auth:
+      disable_login_form: "true"
+    auth.basic:
+      enabled: "true"
+    auth.generic_oauth:
+      enabled: "true"
+      auth_url: "http://{{ .Values.iam.address }}:{{ .Values.iam.publicPort }}/login/oauth/authorize"
+      api_url: "http://{{ .Values.iam.serviceName }}:{{ .Values.iam.internalPort }}/api/userinfo"
+      token_url: "http://{{ .Values.iam.serviceName }}:{{ .Values.iam.internalPort }}/api/login/oauth/access_token"
+      signout_redirect_url: "http://{{ .Values.iam.address }}:{{ .Values.iam.publicPort }}/api/logout"
+      scopes: "openid profile email groups offline_access"
+      use_pkce: "true"
+      use_refresh_token: "true"
+      role_attribute_path: contains(groups[*], 'paas/ops') && 'GrafanaAdmin' || 'Viewer'
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: grafana-postgres
+spec:
+  valuesFrom:
+    - targetPath: "secureJsonData.password"
+      valueFrom:
+        secretKeyRef:
+          name: {{ .Values.grafana.secretName }}
+          key: "password"
+  instanceSelector:
+    matchLabels:
+      dashboards: "paas"
+  datasource:
+    name: grafana-postgres
+    type: postgres
+    url: {{ .Values.grafana.pg.clusterName }}-r:5432
+    user: {{ .Values.grafana.pg.username }}
+    access: proxy
+    jsonData:
+      database: {{ .Values.grafana.pg.databaseName }}
+      sslmode: 'disable'
+      maxOpenConns: 10
+      maxIdleConns: 10
+      maxIdleConnsAuto: true
+      connMaxLifetime: 14400
+      postgresVersion: 1500
+      timescaledb: false
+    secureJsonData:
+      password: "${password}"
+{{- end -}}

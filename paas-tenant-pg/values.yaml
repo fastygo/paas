@@ -1,0 +1,17 @@
+gateway:
+  name: gateway
+
+db:
+  # @schema
+  # pattern: ^[a-z]+[a-z0-9_]+[a-z0-9]$
+  # required: true
+  # type: string
+  # @schema
+  name: example
+  username: admin
+  password: admin
+  size: 1Gi
+  instances: 1
+  # enum: ["csi-ceph-hdd-me1", "csi-ceph-ssd-me1", "csi-high-iops-me1"]
+  storageClass: ""
+

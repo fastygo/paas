@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "db": {
+      "additionalProperties": false,
+      "properties": {
+        "instances": {
+          "default": 1,
+          "required": [],
+          "title": "instances",
+          "type": "integer"
+        },
+        "name": {
+          "default": "example",
+          "pattern": "^[a-z]+[a-z0-9_]+[a-z0-9]$",
+          "required": [],
+          "title": "name",
+          "type": "string"
+        },
+        "password": {
+          "default": "admin",
+          "required": [],
+          "title": "password",
+          "type": "string"
+        },
+        "size": {
+          "default": "1Gi",
+          "required": [],
+          "title": "size",
+          "type": "string"
+        },
+        "storageClass": {
+          "default": "",
+          "required": [],
+          "title": "storageClass",
+          "type": "string",
+          "x-suggestions": ["csi-ceph-hdd-me1", "csi-ceph-ssd-me1", "csi-high-iops-me1"]
+        },
+        "username": {
+          "default": "admin",
+          "required": [],
+          "title": "username",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "username",
+        "password",
+        "size",
+        "instances",
+        "storageClass"
+      ],
+      "title": "db",
+      "type": "object"
+    },
+    "gateway": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "default": "gateway",
+          "required": [],
+          "title": "name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "gateway",
+      "type": "object"
+    },
+    "global": {
+      "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
+      "required": [],
+      "title": "global",
+      "type": "object"
+    }
+  },
+  "required": [
+    "gateway",
+    "db"
+  ],
+  "type": "object"
+}

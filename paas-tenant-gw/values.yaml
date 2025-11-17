@@ -1,0 +1,3 @@
+# Добавить имя, вместо того чтобы брать через release namespace
+listeners:
+  tcp: []

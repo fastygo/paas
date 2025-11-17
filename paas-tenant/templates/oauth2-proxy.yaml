@@ -1,0 +1,67 @@
+{{- if and .Values.iam.address .Values.address }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oauth2-proxy-config
+data:
+  oauth2-proxy.cfg: |
+    provider = "oidc"
+    provider_display_name = "PaaS"
+    allowed_groups = ["paas/ops", "paas/{{ .Values.tenant }}"] # Группы должны быть с префиксом организации
+    oidc_issuer_url = "http://{{ .Values.iam.address }}:{{ .Values.iam.publicPort }}"
+    client_id = "{{ .Values.oauth2proxy.clientID }}"
+    client_secret = "{{ .Values.oauth2proxy.clientSecret }}"
+    redirect_url = "http://{{ .Values.address }}:8000/oauth2/callback"  # Укажи URL для callback
+    email_domains = "*"
+    cookie_secret = "your-32-char-secret-key1"
+    cookie_secure = false # Это позволяет пока отказаться от HTTPs
+    upstreams = ["http://cyclops-ui:3000"]
+    http_address = "0.0.0.0:3000"
+    scope = "openid profile email"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy
+  labels:
+    app: oauth2-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oauth2-proxy
+  template:
+    metadata:
+      labels:
+        app: oauth2-proxy
+    spec:
+      containers:
+      - name: oauth2-proxy
+        image: quay.io/oauth2-proxy/oauth2-proxy:latest
+        args:
+        - --config=/etc/oauth2-proxy/oauth2-proxy.cfg
+        ports:
+        - containerPort: 3000
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /etc/oauth2-proxy
+      volumes:
+      - name: config
+        configMap:
+          name: oauth2-proxy-config
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy
+spec:
+  selector:
+    app: oauth2-proxy
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  type: ClusterIP

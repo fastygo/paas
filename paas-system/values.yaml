@@ -1,0 +1,44 @@
+gateway:
+  className: eg
+
+pgIam:
+  clusterName: iam-postgres
+  secretName: postgres-iam-secret
+  username: iam
+  databaseName: iam
+  password: password
+  size: 1Gi
+
+  persistent:
+    enabled: true
+    storageClassName: csi-ceph-ssd-me1
+
+iam:
+  secretName: iam-secret
+  address: ""
+  labels:
+    paas-system/service: iam
+  gatewayName: iam-gateway
+  routeName: iam-route
+  serviceName: iam-service
+  publicPort: 8080
+  internalPort: 8080
+
+grafana:
+  secretName: grafana-config
+  routeName: "grafana-route"
+  clientID: ""
+  clientSecret: ""
+  internalPort: 3000
+  adminPassword: ""
+
+  pg:
+    clusterName: grafana-postgres
+    username: grafana
+    databaseName: grafana
+    password: password
+    size: 1Gi
+
+    persistent:
+      enabled: true
+      storageClassName: csi-ceph-ssd-me1

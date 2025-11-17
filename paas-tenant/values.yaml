@@ -1,0 +1,11 @@
+address: ""
+
+tenant: "tenant-name"
+
+iam:
+  address: ""
+  publicPort: 8080
+
+oauth2proxy:
+  clientID: ""
+  clientSecret: ""

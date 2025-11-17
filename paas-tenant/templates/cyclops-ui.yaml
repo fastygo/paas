@@ -1,0 +1,177 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/component: ctrl
+    app.kubernetes.io/name: cyclops-ctrl
+    app.kubernetes.io/part-of: cyclops
+  name: cyclops-ctrl
+rules:
+  - apiGroups:
+      - '*'
+    resources:
+      - '*'
+    verbs:
+      - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/component: ctrl
+    app.kubernetes.io/name: cyclops-ctrl
+    app.kubernetes.io/part-of: cyclops
+  name: cyclops-ctrl
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cyclops-ctrl
+subjects:
+  - kind: ServiceAccount
+    name: cyclops-ctrl
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/component: ctrl
+    app.kubernetes.io/name: cyclops-ctrl
+    app.kubernetes.io/part-of: cyclops
+  name: cyclops-ctrl
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cyclops-ui
+  labels:
+    app: cyclops-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cyclops-ui
+  template:
+    metadata:
+      labels:
+        app: cyclops-ui
+    spec:
+      containers:
+        - name: cyclops-ui
+          image: cyclopsui/cyclops-ui:v0.18.0
+          ports:
+            - containerPort: 80
+          env:
+            - name: REACT_APP_CYCLOPS_CTRL_HOST
+              value: http://cyclops-ctrl:8080
+            - name: REACT_APP_ENABLE_STREAMING
+              value: "true"
+            - name: NODE_ENV
+              value: production
+            - name: NODE_OPTIONS
+              value: --openssl-legacy-provider
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cyclops-ui
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: 80
+      protocol: TCP
+  selector:
+    app: cyclops-ui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cyclops-ctrl
+  labels:
+    app: cyclops-ctrl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cyclops-ctrl
+  template:
+    metadata:
+      labels:
+        app: cyclops-ctrl
+    spec:
+      serviceAccountName: cyclops-ctrl
+      containers:
+        - name: cyclops-ctrl
+          image: cyclopsui/cyclops-ctrl:v0.18.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: WATCH_NAMESPACE
+              value: {{ .Release.Namespace }}
+            - name: MODULE_TARGET_NAMESPACE
+              value: {{ .Release.Namespace }}
+            - name: WATCH_NAMESPACE_HELM
+              value: {{ .Release.Namespace }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8082
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cyclops-ctrl
+  labels:
+    app: cyclops-ctrl
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: cyclops-ctrl
+---
+apiVersion: cyclops-ui.com/v1alpha1
+kind: TemplateStore
+metadata:
+  annotations:
+    cyclops-ui.com/icon: https://www.postgresql.org/media/img/about/press/elephant.png
+  name: paas-pg
+spec:
+  path: paas-tenant-pg
+  repo: https://gitverse.ru/emelianovss/paas-kube-article.git
+  version: part-02
+  sourceType: git
+---
+apiVersion: cyclops-ui.com/v1alpha1
+kind: Module
+metadata:
+  annotations:
+    cyclops-ui.com/icon: https://gateway.envoyproxy.io/icons/logo.svg
+  name: paas-gateway
+spec:
+  targetNamespace: {{ .Release.Namespace }}
+  template:
+    path: paas-tenant-gw
+    repo: https://gitverse.ru/emelianovss/paas-kube-article.git
+    sourceType: git
+    version: part-02
+  values:
+    global: {}
+    listeners:
+      tcp: []
+

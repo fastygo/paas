@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.pgIam.secretName }}
+type: kubernetes.io/basic-auth
+data:
+  username: {{ .Values.pgIam.username | b64enc }}
+  password: {{ .Values.pgIam.password | b64enc }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.pgIam.clusterName }}
+spec:
+  instances: 2
+  bootstrap:
+    initdb:
+      database: {{ .Values.pgIam.databaseName }}
+      owner: {{ .Values.pgIam.username }}
+      secret:
+        name: {{ .Values.pgIam.secretName }}
+  storage:
+    size: {{ .Values.pgIam.size }}
+    {{- if .Values.pgIam.persistent.enabled}}
+    storageClass: {{ .Values.pgIam.persistent.storageClassName }}
+    {{- end }}
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: iam-postgres
+spec:
+  valuesFrom:
+    - targetPath: "secureJsonData.password"
+      valueFrom:
+        secretKeyRef:
+          name: {{ .Values.pgIam.secretName }}
+          key: "password"
+  instanceSelector:
+    matchLabels:
+      dashboards: "paas"
+  datasource:
+    name: iam-postgres
+    type: postgres
+    url: {{ .Values.pgIam.clusterName }}-r:5432
+    user: {{ .Values.pgIam.username }}
+    access: proxy
+    jsonData:
+      database: {{ .Values.pgIam.databaseName }}
+      sslmode: 'disable'
+      maxOpenConns: 10
+      maxIdleConns: 10
+      maxIdleConnsAuto: true
+      connMaxLifetime: 14400
+      postgresVersion: 1500
+      timescaledb: false
+    secureJsonData:
+      password: "${password}"

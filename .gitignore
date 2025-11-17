@@ -1,0 +1,11 @@
+.terraform
+*.tfstate
+*.tfstate.backup
+.idea
+.helmwave
+
+tenant-*.yaml
+*/values/env.yaml
+values/env.yaml
+
+.manual

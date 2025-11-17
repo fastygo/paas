@@ -1,0 +1,72 @@
+project: kube-paas
+version: "0.41.8"
+
+# OCI: modern way to get chart from registry
+registries:
+  - host: docker.io
+  - host: ghcr.io
+
+
+repositories:
+  - name: cnpg
+    url: https://cloudnative-pg.github.io/charts
+
+.options-system: &options-system
+  namespace: paas-system
+  create_namespace: true
+  wait: true
+  timeout: 1m
+  max_history: 3
+
+.options-operators: &options-operators
+  namespace: paas-operators
+  create_namespace: true
+  wait: true
+  timeout: 1m
+  max_history: 3
+
+.options-tenant: &options-tenant
+  create_namespace: true
+  wait: true
+  timeout: 1m
+  max_history: 3
+
+releases:
+  - name: "eg"
+    chart:
+      name: oci://docker.io/envoyproxy/gateway-helm
+    <<: *options-system
+    tags: [eg]
+
+  - name: "cnpg"
+    chart:
+      name: cnpg/cloudnative-pg
+    <<: *options-operators
+    tags: [cnpg]
+
+  - name: "grafana"
+    chart:
+      name: "oci://ghcr.io/grafana/helm-charts/grafana-operator"
+      # Версию надо явно указывать, в противном случае не ставится
+      version: "v5.17.0"
+    <<: *options-operators
+    tags: [grafana]
+  
+  - name: "system"
+    chart:
+      name: "./paas-system"
+    <<: *options-system
+    tags: [system]
+    values:
+      - "values/env.yaml"
+
+  - name: "tenant-1"
+    namespace: "paas-tenant-1"
+    chart:
+      name: "./paas-tenant"
+    <<: *options-tenant
+    create_namespace: true
+    tags: [tenant-1]
+    values:
+      - "values/env.yaml"
+      - "values/tenant-1.env.yaml"
