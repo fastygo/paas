@@ -1,0 +1,43 @@
+# Конфигурация Kind кластера для локального изучения
+# Использование: kind create cluster --config kind-cluster-config.yaml --name learning
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: learning
+
+# Multi-node кластер для лучшего понимания
+nodes:
+  # Control plane node
+  - role: control-plane
+    kubeadmConfigPatches:
+    - |
+      kind: InitConfiguration
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "node-type=control-plane"
+    extraPortMappings:
+    - containerPort: 30000
+      hostPort: 30000
+      protocol: TCP
+    - containerPort: 30001
+      hostPort: 30001
+      protocol: TCP
+  
+  # Worker node 1
+  - role: worker
+    kubeadmConfigPatches:
+    - |
+      kind: JoinConfiguration
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "node-type=worker,env=dev"
+  
+  # Worker node 2 (опционально, для HA)
+  - role: worker
+    kubeadmConfigPatches:
+    - |
+      kind: JoinConfiguration
+      nodeRegistration:
+        kubeletExtraArgs:
+          node-labels: "node-type=worker,env=dev"
+
