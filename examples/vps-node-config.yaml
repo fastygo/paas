@@ -1,0 +1,209 @@
+# Пример конфигурации для VPS worker node
+# Используйте этот файл как reference при настройке интеграции
+
+---
+# Node Labels (применяется после присоединения к кластеру)
+# kubectl label node vps-worker-1 node-type=vps paas-tier=tenant storage-type=local
+
+---
+# Node Taints (для изоляции workload)
+# kubectl taint node vps-worker-1 paas-tier=tenant:NoSchedule
+
+---
+# StorageClass для локального хранилища на VPS
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-storage-vps
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+
+---
+# Пример LocalVolume для ручного управления дисками
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: local-pv-vps-1
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage-vps
+  local:
+    path: /mnt/data
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: node-type
+          operator: In
+          values:
+          - vps
+
+---
+# NetworkPolicy для изоляции tenant namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tenant-network-policy
+  namespace: paas-tenant-1
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Разрешить трафик из системных namespace
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: paas-system
+    - namespaceSelector:
+        matchLabels:
+          name: paas-operators
+  # Разрешить трафик внутри namespace
+  - from:
+    - podSelector: {}
+  egress:
+  # Разрешить весь исходящий трафик
+  - {}
+  # Или ограничить конкретными namespace
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: paas-system
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+
+---
+# Пример Deployment с nodeSelector и tolerations
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-app-vps
+  namespace: paas-tenant-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: example-app
+  template:
+    metadata:
+      labels:
+        app: example-app
+    spec:
+      # Node Affinity - предпочтительно на VPS, но можно и на cloud
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-type
+                operator: In
+                values:
+                - vps
+        # Pod Anti-Affinity для распределения по узлам
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - example-app
+              topologyKey: kubernetes.io/hostname
+      # Tolerations для работы на VPS node
+      tolerations:
+      - key: paas-tier
+        operator: Equal
+        value: tenant
+        effect: NoSchedule
+      containers:
+      - name: app
+        image: nginx:latest
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: app-data-pvc
+
+---
+# Пример PVC с использованием StorageClass для VPS
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: app-data-pvc
+  namespace: paas-tenant-1
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: local-storage-vps
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# Пример StatefulSet для приложений с состоянием на VPS
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: database-vps
+  namespace: paas-tenant-1
+spec:
+  serviceName: database
+  replicas: 1
+  selector:
+    matchLabels:
+      app: database
+  template:
+    metadata:
+      labels:
+        app: database
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-type
+                operator: In
+                values:
+                - vps
+      tolerations:
+      - key: paas-tier
+        operator: Equal
+        value: tenant
+        effect: NoSchedule
+      containers:
+      - name: db
+        image: postgres:15
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: local-storage-vps
+      resources:
+        requests:
+          storage: 20Gi
+

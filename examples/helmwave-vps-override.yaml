@@ -1,0 +1,69 @@
+# Пример override конфигурации для helmwave при работе с VPS node
+# Используйте этот файл как values/vps-override.yaml
+
+# Node Selector для всех компонентов tenant
+nodeSelector:
+  node-type: vps
+  paas-tier: tenant
+
+# Tolerations для работы на VPS node
+tolerations:
+  - key: paas-tier
+    operator: Equal
+    value: tenant
+    effect: NoSchedule
+
+# Storage Class override
+storageClass:
+  default: local-storage-vps
+  # Для разных компонентов можно указать разные StorageClass
+  postgres: local-storage-vps
+  redis: local-storage-vps
+
+# Resource limits для оптимизации использования ресурсов VPS
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+
+# Gateway configuration для VPS
+gateway:
+  className: eg
+  # Если Envoy Gateway должен быть доступен с VPS
+  # настройте LoadBalancer или NodePort
+  serviceType: NodePort
+  nodePort: 30080
+
+# Database configuration
+db:
+  # Уменьшите количество реплик для VPS
+  instances: 1  # вместо 2 для экономии ресурсов
+  size: 10Gi    # вместо большего размера
+  storageClass: local-storage-vps
+
+# IAM configuration
+iam:
+  # Используйте IAM из облачного кластера
+  address: "iam-service.paas-system.svc.cluster.local"
+  publicPort: 8080
+
+# Grafana configuration
+grafana:
+  # Используйте Grafana из облачного кластера
+  # или запустите отдельный инстанс на VPS
+  enabled: false  # если используете облачный инстанс
+
+# Cyclops UI configuration
+cyclops:
+  replicas: 1
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
