@@ -1,0 +1,69 @@
+# Пример использования VPSNode CRD
+# Этот пример создает пул VPS узлов с автомасштабированием
+
+apiVersion: kubero.dev/v1alpha1
+kind: VPSNode
+metadata:
+  name: vps-hetzner-fsn1
+spec:
+  provider: hetzner
+  region: fsn1
+  instanceType: cx21
+  autoScale:
+    enabled: true
+    minNodes: 1
+    maxNodes: 5
+    targetCPU: 70
+    scaleDownDelay: "15m"
+  labels:
+    provider: hetzner
+    region: fsn1
+    node-type: vps
+    paas-tier: tenant
+    storage-type: local
+  taints:
+  - key: paas-tier
+    value: tenant
+    effect: NoSchedule
+  storageClass: local-storage-vps
+  kubernetesVersion: "1.28"
+
+---
+# Пример для DigitalOcean
+apiVersion: kubero.dev/v1alpha1
+kind: VPSNode
+metadata:
+  name: vps-do-nyc1
+spec:
+  provider: digitalocean
+  region: nyc1
+  instanceType: s-2vcpu-4gb
+  autoScale:
+    enabled: true
+    minNodes: 2
+    maxNodes: 10
+    targetCPU: 75
+  labels:
+    provider: digitalocean
+    region: nyc1
+    node-type: vps
+    paas-tier: tenant
+
+---
+# Пример без автомасштабирования (фиксированное количество узлов)
+apiVersion: kubero.dev/v1alpha1
+kind: VPSNode
+metadata:
+  name: vps-vultr-ams
+spec:
+  provider: vultr
+  region: ams
+  instanceType: vc2-2c-4gb
+  autoScale:
+    enabled: false
+  labels:
+    provider: vultr
+    region: ams
+    node-type: vps
+    paas-tier: tenant
+

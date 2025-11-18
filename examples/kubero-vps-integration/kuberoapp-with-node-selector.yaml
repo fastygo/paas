@@ -1,0 +1,114 @@
+# Пример KuberoApp с настройками размещения на VPS узлах
+# Эти настройки можно применять через UI Kubero или напрямую через kubectl
+
+apiVersion: kubero.dev/v1alpha1
+kind: KuberoApp
+metadata:
+  name: my-app-vps
+  namespace: default
+spec:
+  name: my-app
+  pipeline: my-pipeline
+  phase: production
+  
+  # Node Selector для размещения на VPS узлах
+  nodeSelector:
+    node-type: vps
+    paas-tier: tenant
+    provider: hetzner  # Опционально: конкретный провайдер
+  
+  # Node Affinity для более гибкого размещения
+  affinity:
+    nodeAffinity:
+      # Требование: только VPS узлы
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: node-type
+            operator: In
+            values:
+            - vps
+      # Предпочтение: узлы конкретного провайдера
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+          - key: provider
+            operator: In
+            values:
+            - hetzner
+            - digitalocean
+      # Предпочтение: узлы в определенном регионе
+      - weight: 50
+        preference:
+          matchExpressions:
+          - key: region
+            operator: In
+            values:
+            - fsn1
+            - nyc1
+  
+  # Tolerations для работы на VPS узлах с taints
+  tolerations:
+  - key: paas-tier
+    operator: Equal
+    value: tenant
+    effect: NoSchedule
+  
+  # Pod Anti-Affinity для распределения по разным узлам
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - my-app
+        topologyKey: kubernetes.io/hostname
+  
+  # Остальные настройки приложения
+  git:
+    url: https://github.com/user/repo
+    branch: main
+  
+  buildpack: nixpacks
+  
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  
+  replicas: 3
+  
+  # Storage с использованием StorageClass для VPS
+  storage:
+  - name: app-data
+    size: 10Gi
+    storageClass: local-storage-vps
+    mountPath: /data
+
+---
+# Пример для приложения, которое должно работать на облачных узлах
+apiVersion: kubero.dev/v1alpha1
+kind: KuberoApp
+metadata:
+  name: my-app-cloud
+  namespace: default
+spec:
+  name: my-app-cloud
+  pipeline: my-pipeline
+  phase: production
+  
+  # Размещение на облачных узлах
+  nodeSelector:
+    node-type: cloud
+    paas-tier: system
+  
+  # Без tolerations (облачные узлы не имеют taints)
+  tolerations: []
+

@@ -1,0 +1,144 @@
+# Custom Resource Definition для управления VPS узлами
+# Используйте этот CRD для автоматического создания и управления VPS узлами
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: vpsnodes.kubero.dev
+spec:
+  group: kubero.dev
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            required:
+            - provider
+            - region
+            - instanceType
+            properties:
+              provider:
+                type: string
+                enum:
+                - hetzner
+                - digitalocean
+                - vultr
+                - linode
+                - custom
+                description: VPS провайдер
+              region:
+                type: string
+                description: Регион размещения VPS
+              instanceType:
+                type: string
+                description: Тип инстанса (например, cx21 для Hetzner)
+              autoScale:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                  minNodes:
+                    type: integer
+                    minimum: 1
+                    default: 1
+                  maxNodes:
+                    type: integer
+                    minimum: 1
+                    default: 5
+                  targetCPU:
+                    type: integer
+                    minimum: 0
+                    maximum: 100
+                    default: 70
+                    description: Целевое использование CPU в процентах
+                  scaleDownDelay:
+                    type: string
+                    default: "10m"
+                    description: Задержка перед уменьшением количества узлов
+              labels:
+                type: object
+                additionalProperties:
+                  type: string
+                default:
+                  node-type: vps
+                  paas-tier: tenant
+              taints:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    key:
+                      type: string
+                    value:
+                      type: string
+                    effect:
+                      type: string
+                      enum:
+                      - NoSchedule
+                      - PreferNoSchedule
+                      - NoExecute
+                default:
+                - key: paas-tier
+                  value: tenant
+                  effect: NoSchedule
+              storageClass:
+                type: string
+                default: local-storage-vps
+              kubernetesVersion:
+                type: string
+                default: "1.28"
+                description: Версия Kubernetes для установки на узле
+          status:
+            type: object
+            properties:
+              nodeName:
+                type: string
+              state:
+                type: string
+                enum:
+                - pending
+                - creating
+                - joining
+                - ready
+                - failed
+                - deleting
+              ipAddress:
+                type: string
+              privateIP:
+                type: string
+              nodeCount:
+                type: integer
+              lastScaled:
+                type: string
+                format: date-time
+              conditions:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    status:
+                      type: string
+                    lastTransitionTime:
+                      type: string
+                      format: date-time
+                    reason:
+                      type: string
+                    message:
+                      type: string
+  scope: Cluster
+  names:
+    plural: vpsnodes
+    singular: vpsnode
+    kind: VPSNode
+    shortNames:
+    - vpsn
+    - vps
+
