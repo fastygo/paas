@@ -1,0 +1,88 @@
+# Конфигурация для Prod Kubero (VPS #3)
+# Используется для продакшена
+
+kubero:
+  namespace: kubero-prod
+  
+  # Настройки для продакшена
+  settings:
+    autoDeploy: false  # Только через approval
+    requireApproval: true
+    healthChecks: true
+    rollbackOnFailure: true
+    defaultReplicas: 2  # Минимум 2 реплики для HA
+  
+  # High Availability
+  ha:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+  
+  # Deployment стратегии
+  deployment:
+    strategy: RollingUpdate
+    maxSurge: 1
+    maxUnavailable: 0  # Нулевой downtime
+  
+  # Мониторинг и алертинг
+  monitoring:
+    enabled: true
+    metricsRetention: 90d
+    alerts:
+      enabled: true
+      channels:
+        - slack
+        - email
+  
+  # Ресурсы по умолчанию для приложений
+  defaultResources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+  
+  # Безопасность
+  security:
+    rbac:
+      enabled: true
+      strict: true
+    networkPolicies:
+      enabled: true
+      defaultDeny: true
+    podSecurityStandards:
+      enforce: restricted
+      audit: restricted
+      warn: restricted
+  
+  # Резервное копирование
+  backup:
+    enabled: true
+    schedule: "0 3 * * *"  # Ежедневно в 3:00
+    retention: 90d
+  
+  # Логирование
+  logging:
+    enabled: true
+    retention: 30d
+    centralized: true  # Отправка в System Kubero
+  
+  # Health checks
+  healthCheck:
+    enabled: true
+    interval: 30s
+    timeout: 10s
+    failureThreshold: 3
+    successThreshold: 1
+  
+  # Resource quotas
+  quotas:
+    enabled: true
+    cpu: "100"
+    memory: "200Gi"
+    pods: "100"
+

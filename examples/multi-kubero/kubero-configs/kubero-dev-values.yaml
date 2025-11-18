@@ -1,0 +1,54 @@
+# Конфигурация для Dev Kubero (VPS #2)
+# Используется для разработки и тестирования
+
+kubero:
+  namespace: kubero-dev
+  
+  # Настройки для разработки
+  settings:
+    autoDeploy: true  # Автоматическое развертывание при push
+    previewApps: true  # Preview apps для PR
+    resourceLimits:
+      cpu: "500m"
+      memory: "512Mi"
+    defaultReplicas: 1
+  
+  # GitOps настройки
+  gitops:
+    enabled: true
+    autoCleanup: true
+    cleanupAfter: "7d"  # Удалять preview apps через 7 дней
+    previewAppPrefix: "preview-"
+  
+  # CI/CD интеграция
+  cicd:
+    gitea:
+      enabled: true
+      webhookSecret: ""  # Установить через секрет
+    autoBuild: true
+    autoDeploy: true
+  
+  # Ресурсы по умолчанию для приложений
+  defaultResources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  
+  # Настройки для быстрого развертывания
+  build:
+    cacheEnabled: true
+    parallelBuilds: 2
+  
+  # Логирование (легковесное)
+  logging:
+    enabled: true
+    retention: 7d
+  
+  # Мониторинг (базовый)
+  monitoring:
+    enabled: true
+    metricsRetention: 7d
+

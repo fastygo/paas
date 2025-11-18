@@ -1,0 +1,168 @@
+# Пример Drone CI pipeline для деплоя через несколько Kubero инстансов
+# Файл: .drone.yml
+# Drone CI хорошо интегрируется с Gitea
+
+---
+kind: pipeline
+type: docker
+name: build-and-test
+
+steps:
+  - name: build
+    image: docker:latest
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+    commands:
+      - docker build -t ${DRONE_REPO_NAME}:${DRONE_COMMIT_SHA} .
+      - docker tag ${DRONE_REPO_NAME}:${DRONE_COMMIT_SHA} ${DRONE_REPO_NAME}:latest
+
+  - name: test
+    image: node:18
+    commands:
+      - npm install
+      - npm test
+
+  - name: publish
+    image: plugins/docker
+    settings:
+      registry: registry.example.com
+      repo: registry.example.com/${DRONE_REPO_NAME}
+      tags:
+        - ${DRONE_COMMIT_SHA}
+        - latest
+      username:
+        from_secret: registry_username
+      password:
+        from_secret: registry_password
+
+---
+kind: pipeline
+type: kubernetes
+name: deploy-dev
+depends_on:
+  - build-and-test
+
+steps:
+  - name: deploy-to-dev
+    image: bitnami/kubectl:latest
+    environment:
+      KUBECONFIG:
+        from_secret: kubernetes_dev_config
+    commands:
+      - |
+        cat <<EOF | kubectl apply -f -
+        apiVersion: kubero.dev/v1alpha1
+        kind: KuberoApp
+        metadata:
+          name: ${DRONE_REPO_NAME}
+          namespace: default
+        spec:
+          name: ${DRONE_REPO_NAME}
+          pipeline: dev-pipeline
+          phase: development
+          image: registry.example.com/${DRONE_REPO_NAME}:${DRONE_COMMIT_SHA}
+          replicas: 1
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+        EOF
+      - kubectl wait --for=condition=available --timeout=300s deployment/${DRONE_REPO_NAME} || true
+      - |
+        APP_URL=$(kubectl get kuberoapp ${DRONE_REPO_NAME} -o jsonpath='{.status.url}')
+        curl -f $APP_URL/health || exit 1
+
+trigger:
+  branch:
+    - develop
+  event:
+    - push
+    - pull_request
+
+---
+kind: pipeline
+type: kubernetes
+name: deploy-prod
+depends_on:
+  - build-and-test
+
+steps:
+  - name: deploy-to-prod
+    image: bitnami/kubectl:latest
+    environment:
+      KUBECONFIG:
+        from_secret: kubernetes_prod_config
+    commands:
+      - |
+        # Blue-Green deployment
+        NEW_VERSION="${DRONE_REPO_NAME}-v${DRONE_COMMIT_SHA}"
+        cat <<EOF | kubectl apply -f -
+        apiVersion: kubero.dev/v1alpha1
+        kind: KuberoApp
+        metadata:
+          name: ${NEW_VERSION}
+          namespace: default
+        spec:
+          name: ${DRONE_REPO_NAME}
+          pipeline: prod-pipeline
+          phase: production
+          image: registry.example.com/${DRONE_REPO_NAME}:${DRONE_COMMIT_SHA}
+          replicas: 2
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          healthCheck:
+            enabled: true
+            path: /health
+        EOF
+      - kubectl wait --for=condition=available --timeout=600s deployment/${NEW_VERSION} || exit 1
+      - |
+        APP_URL=$(kubectl get kuberoapp ${NEW_VERSION} -o jsonpath='{.status.url}')
+        curl -f $APP_URL/health || exit 1
+        curl -f $APP_URL/ready || exit 1
+      - |
+        # Switch traffic
+        kubectl patch kuberoapp ${DRONE_REPO_NAME} \
+          -p "{\"spec\":{\"image\":\"registry.example.com/${DRONE_REPO_NAME}:${DRONE_COMMIT_SHA}\"}}"
+      - |
+        # Cleanup old version
+        kubectl delete kuberoapp ${NEW_VERSION} || true
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+
+---
+kind: pipeline
+type: docker
+name: notify
+depends_on:
+  - deploy-dev
+  - deploy-prod
+
+steps:
+  - name: notify-slack
+    image: plugins/slack
+    settings:
+      webhook:
+        from_secret: slack_webhook
+      channel: deployments
+      template: >
+        Deployment Status: {{ build.status }}
+        Repository: {{ repo.name }}
+        Branch: {{ build.branch }}
+        Commit: {{ build.commit }}
+    when:
+      status:
+        - success
+        - failure
+

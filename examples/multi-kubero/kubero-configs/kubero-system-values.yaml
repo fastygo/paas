@@ -1,0 +1,67 @@
+# Конфигурация для System Kubero (VPS #1)
+# Используется для управления инфраструктурой
+
+kubero:
+  namespace: kubero-system
+  
+  # Системные компоненты
+  components:
+    monitoring:
+      enabled: true
+      prometheus:
+        retention: 30d
+        storage: 50Gi
+      grafana:
+        enabled: true
+        adminPassword: ""  # Установить через секрет
+    
+    logging:
+      enabled: true
+      loki:
+        retention: 90d
+        storage: 100Gi
+    
+    backup:
+      enabled: true
+      velero:
+        schedule: "0 2 * * *"  # Ежедневно в 2:00
+        retention: 30d
+    
+    operators:
+      - name: cnpg
+        enabled: true
+        namespace: paas-operators
+      - name: grafana-operator
+        enabled: true
+        namespace: paas-operators
+      - name: envoy-gateway
+        enabled: true
+        namespace: paas-system
+
+  # Ресурсы для системных компонентов
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+  
+  # Настройки безопасности
+  security:
+    rbac:
+      enabled: true
+    networkPolicies:
+      enabled: true
+    podSecurityStandards:
+      enforce: restricted
+  
+  # Настройки для подключения к другим Kubero инстансам
+  remoteClusters:
+    - name: kubero-dev
+      server: https://kubero-dev.example.com:6443
+      namespace: kubero-dev
+    - name: kubero-prod
+      server: https://kubero-prod.example.com:6443
+      namespace: kubero-prod
+

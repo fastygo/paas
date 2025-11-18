@@ -1,0 +1,204 @@
+# Пример Gitea Actions workflow для деплоя через несколько Kubero инстансов
+# Файл: .gitea/workflows/deploy.yml
+
+name: Deploy Application
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+env:
+  REGISTRY: registry.example.com
+  IMAGE_NAME: ${{ gitea.repository }}
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Login to Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      
+      - name: Build Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ gitea.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+      
+      - name: Run tests
+        run: |
+          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ gitea.sha }} npm test
+
+  deploy-dev:
+    name: Deploy to Development
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: gitea.ref == 'refs/heads/develop' || gitea.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+      
+      - name: Configure kubectl for Dev
+        run: |
+          echo "${{ secrets.KUBERNETES_DEV_CONFIG }}" | base64 -d > kubeconfig-dev
+          export KUBECONFIG=kubeconfig-dev
+          kubectl config use-context dev
+      
+      - name: Deploy to Dev Kubero
+        run: |
+          export KUBECONFIG=kubeconfig-dev
+          
+          # Обновить KuberoApp CRD
+          cat <<EOF | kubectl apply -f -
+          apiVersion: kubero.dev/v1alpha1
+          kind: KuberoApp
+          metadata:
+            name: ${{ env.IMAGE_NAME }}
+            namespace: default
+          spec:
+            name: ${{ env.IMAGE_NAME }}
+            pipeline: dev-pipeline
+            phase: development
+            git:
+              url: ${{ gitea.server_url }}/${{ gitea.repository }}
+              branch: develop
+            buildpack: dockerfile
+            image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ gitea.sha }}
+            replicas: 1
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+          EOF
+      
+      - name: Wait for deployment
+        run: |
+          export KUBECONFIG=kubeconfig-dev
+          kubectl wait --for=condition=available --timeout=300s \
+            deployment/${{ env.IMAGE_NAME }} || true
+      
+      - name: Run smoke tests
+        run: |
+          export KUBECONFIG=kubeconfig-dev
+          # Получить URL приложения
+          APP_URL=$(kubectl get kuberoapp ${{ env.IMAGE_NAME }} -o jsonpath='{.status.url}')
+          # Запустить smoke tests
+          curl -f $APP_URL/health || exit 1
+
+  deploy-prod:
+    name: Deploy to Production
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: gitea.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+      
+      - name: Configure kubectl for Prod
+        run: |
+          echo "${{ secrets.KUBERNETES_PROD_CONFIG }}" | base64 -d > kubeconfig-prod
+          export KUBECONFIG=kubeconfig-prod
+          kubectl config use-context prod
+      
+      - name: Blue-Green Deployment
+        run: |
+          export KUBECONFIG=kubeconfig-prod
+          
+          # Создать новую версию приложения
+          cat <<EOF | kubectl apply -f -
+          apiVersion: kubero.dev/v1alpha1
+          kind: KuberoApp
+          metadata:
+            name: ${{ env.IMAGE_NAME }}-v${{ gitea.sha }}
+            namespace: default
+          spec:
+            name: ${{ env.IMAGE_NAME }}
+            pipeline: prod-pipeline
+            phase: production
+            image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ gitea.sha }}
+            replicas: 2
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "500m"
+              limits:
+                memory: "1Gi"
+                cpu: "1000m"
+            healthCheck:
+              enabled: true
+              path: /health
+          EOF
+      
+      - name: Wait for new version
+        run: |
+          export KUBECONFIG=kubeconfig-prod
+          kubectl wait --for=condition=available --timeout=600s \
+            deployment/${{ env.IMAGE_NAME }}-v${{ gitea.sha }} || exit 1
+      
+      - name: Health check
+        run: |
+          export KUBECONFIG=kubeconfig-prod
+          APP_URL=$(kubectl get kuberoapp ${{ env.IMAGE_NAME }}-v${{ gitea.sha }} -o jsonpath='{.status.url}')
+          # Расширенные health checks
+          curl -f $APP_URL/health || exit 1
+          curl -f $APP_URL/ready || exit 1
+      
+      - name: Switch traffic to new version
+        run: |
+          export KUBECONFIG=kubeconfig-prod
+          # Обновить основной KuberoApp на новую версию
+          kubectl patch kuberoapp ${{ env.IMAGE_NAME }} \
+            -p '{"spec":{"image":"${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ gitea.sha }}"}}'
+      
+      - name: Cleanup old version
+        if: success()
+        run: |
+          export KUBECONFIG=kubeconfig-prod
+          # Удалить старую версию после успешного переключения
+          kubectl delete kuberoapp ${{ env.IMAGE_NAME }}-v${{ gitea.sha }} || true
+
+  notify:
+    name: Notify Deployment Status
+    needs: [deploy-dev, deploy-prod]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Send notification
+        run: |
+          # Отправить уведомление в Slack/Discord/Email
+          echo "Deployment status: ${{ job.status }}"
+          # Здесь можно добавить отправку уведомлений
+
