@@ -1,0 +1,131 @@
+# Пример Gateway конфигурации для облачного развертывания
+# Используйте этот пример для создания Gateway в облачном кластере
+
+---
+# GatewayClass (обычно создается при установке Envoy Gateway)
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: GatewayClass
+metadata:
+  name: eg-cloud
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  description: "Envoy Gateway for cloud deployment"
+
+---
+# Gateway для HTTP трафика
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: cloud-gateway
+  namespace: default
+spec:
+  gatewayClassName: eg-cloud
+  listeners:
+  # HTTP listener
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes:
+      namespaces:
+        from: All  # Разрешить маршруты из всех namespace
+  
+  # HTTPS listener (раскомментируйте после настройки TLS)
+  # - name: https
+  #   protocol: HTTPS
+  #   port: 443
+  #   allowedRoutes:
+  #     namespaces:
+  #       from: All
+  #   tls:
+  #     mode: Terminate
+  #     certificateRefs:
+  #     - name: cloud-tls-cert
+  #       namespace: default
+
+---
+# Пример HTTPRoute для приложения
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-app-route
+  namespace: default
+spec:
+  parentRefs:
+  - name: cloud-gateway
+    namespace: default
+  hostnames:
+  - "app.example.com"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: example-app-service
+      port: 80
+      weight: 100
+
+---
+# Пример для нескольких путей
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: multi-path-route
+  namespace: default
+spec:
+  parentRefs:
+  - name: cloud-gateway
+  hostnames:
+  - "api.example.com"
+  rules:
+  # API v1
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1
+    backendRefs:
+    - name: api-v1-service
+      port: 80
+      weight: 100
+  
+  # API v2
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v2
+    backendRefs:
+    - name: api-v2-service
+      port: 80
+      weight: 100
+  
+  # Default
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: default-service
+      port: 80
+      weight: 100
+
+---
+# Пример с TLS (после настройки cert-manager)
+# apiVersion: gateway.networking.k8s.io/v1
+# kind: HTTPRoute
+# metadata:
+#   name: secure-route
+#   namespace: default
+# spec:
+#   parentRefs:
+#   - name: cloud-gateway
+#   hostnames:
+#   - "secure.example.com"
+#   rules:
+#   - matches:
+#     - path:
+#         type: PathPrefix
+#         value: /
+#     backendRefs:
+#     - name: secure-app-service
+#       port: 443
+

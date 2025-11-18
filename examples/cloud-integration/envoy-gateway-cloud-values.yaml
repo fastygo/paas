@@ -1,0 +1,94 @@
+# Пример values для Envoy Gateway в облачном Kubernetes
+# Используйте этот файл при развертывании через Helm
+
+# Service конфигурация для LoadBalancer
+service:
+  type: LoadBalancer
+  
+  # Аннотации зависят от провайдера - раскомментируйте нужные
+  
+  # DigitalOcean
+  annotations:
+    service.beta.kubernetes.io/do-loadbalancer-protocol: "http"
+    service.beta.kubernetes.io/do-loadbalancer-algorithm: "round_robin"
+    service.beta.kubernetes.io/do-loadbalancer-healthcheck-path: "/healthz"
+    service.beta.kubernetes.io/do-loadbalancer-healthcheck-protocol: "http"
+  
+  # Hetzner Cloud (раскомментируйте если используете)
+  # annotations:
+  #   loadbalancer.hetzner.cloud/type: "lb11"
+  #   loadbalancer.hetzner.cloud/location: "nbg1"
+  #   loadbalancer.hetzner.cloud/use-private-ip: "false"
+  
+  # AWS EKS (раскомментируйте если используете)
+  # annotations:
+  #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+  #   service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+  #   service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+  
+  # GCP GKE (раскомментируйте если используете)
+  # annotations:
+  #   cloud.google.com/load-balancer-type: "External"
+  #   cloud.google.com/neg: '{"ingress": true}'
+  
+  ports:
+    http:
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+    https:
+      port: 443
+      targetPort: 8443
+      protocol: TCP
+
+# Ресурсы для облачного окружения
+resources:
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
+  limits:
+    cpu: "2000m"
+    memory: "2Gi"
+
+# Реплики для высокой доступности
+replicaCount: 2
+
+# Node selector (если нужно разместить на определенных узлах)
+nodeSelector: {}
+
+# Tolerations (если узлы имеют taints)
+tolerations: []
+
+# Affinity для распределения по узлам
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - gateway
+        topologyKey: kubernetes.io/hostname
+
+# Автомасштабирование (если включено HPA)
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Мониторинг
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+
+# Логирование
+logging:
+  level: info
+
